@@ -26,8 +26,9 @@ publishResult :: (Message -> IO ()) -- ^ A function to send messages
               -> MVar [DisplayData] -- ^ A MVar to use for storing pager output
               -> Bool               -- ^ Whether to use the pager
               -> EvaluationResult   -- ^ The evaluation result
+              -> Bool               -- ^ Whether evaluation completed successfully
               -> IO ()
-publishResult send replyHeader displayed updateNeeded poutput upager result = do
+publishResult send replyHeader displayed updateNeeded poutput upager result success = do
   let final =
         case result of
           IntermediateResult{} -> False
@@ -65,9 +66,13 @@ publishResult send replyHeader displayed updateNeeded poutput upager result = do
       send $ ClearOutput hdr True
 
     sendOutput (ManyDisplay manyOuts) = mapM_ sendOutput manyOuts
-    sendOutput (Display outs) = do
-      hdr <- dupHeader replyHeader DisplayDataMessage
-      send $ PublishDisplayData hdr (map (convertSvgToHtml . prependCss) outs) Nothing
+    sendOutput (Display outs) = case success of
+      True -> do
+        hdr <- dupHeader replyHeader DisplayDataMessage
+        send $ PublishDisplayData hdr (map (convertSvgToHtml . prependCss) outs) Nothing
+      False -> do
+        hdr <- dupHeader replyHeader ExecuteErrorMessage
+        send $ ExecuteError hdr [T.pack (extractPlain outs)] "" ""
 
     convertSvgToHtml (DisplayData MimeSvg s) = html $ makeSvgImg $ base64 $ E.encodeUtf8 s
     convertSvgToHtml x = x
